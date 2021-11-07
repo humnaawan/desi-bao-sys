@@ -49,7 +49,7 @@ atmosphere:
                 dark: spectra/spec-sky.dat
                 grey: spectra/spec-sky-grey.dat
                 bright: spectra/spec-sky-bright.dat
-                dark-modified2: mydata/spec-sky-modified_lambda-dep.dat
+                dark-modified2: /global/homes/a/awan/desi/desi-bao-sys/mysky/spec-sky-modified_lambda-dep.dat
         # Specify the current condition.
         condition: dark-modified2
     # Atmospheric seeing (only used when instrument.fiberloss.method = galsim)
