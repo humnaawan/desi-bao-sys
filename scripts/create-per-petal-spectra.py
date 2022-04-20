@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------
 from astropy.io import fits
 from astropy.table import Table
-
+import astropy.units as u
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -15,8 +15,13 @@ import desimodel.io
 import desispec.io
 from desispec.spectra import Spectra
 from desispec.resolution import Resolution
+from desispec.frame import Frame
+from desispec.specscore import compute_and_append_frame_scores
 
+import logging # would use desi logger but dont know where it saves stuff
+import sys
 import time
+import datetime
 
 from optparse import OptionParser
 parser = OptionParser()
@@ -45,6 +50,7 @@ parser.add_option('--skyerr', default=0,
                   help='skyerr value; default = 0')
 (options, args) = parser.parse_args()
 print('\n## inputs: %s' % options)
+
 data_path = options.data_path
 night = options.night
 expid = options.expid
@@ -60,6 +66,16 @@ start0 = time.time()
 #path = f'/global/cscratch1/sd/awan/desi/{night}/{expid}/'
 path = f'{data_path}/{night}/{expid}/'
 
+# set up the logger
+temp = f'{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
+if debug: temp = f'debug_{temp}'
+logging.basicConfig(filename=f'{path}/log_{temp}.log',
+                    level=logging.DEBUG, filemode='w',
+                    #format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p'
+                   )
+logging.info(f'running {sys.argv[0]}')
+logging.info(f'\n## inputs: {options}\n')
+
 # ------------------------------------------------------------------------
 # fibermap data
 fibermap_fname = f'{path}/fibermap-{expid}.fits'
@@ -68,7 +84,7 @@ hdul_fibermap = fits.open(fibermap_fname)
 
 for key in ['FIBER', 'TARGETID', 'DEVICE_LOC']:
     uniq, cts = np.unique(fibermap[key], return_counts=True)
-    print(f'{len(uniq)} unique {key} with {np.unique(cts)} unique counts across\n')
+    logging.info(f'{len(uniq)} unique {key} with {np.unique(cts)} unique counts across')
 
 # ------------------------------------------------------------------------
 # simspec data
@@ -78,7 +94,7 @@ simspec_hdul = fits.open(simspec_fname)
 obsconditions = Table.read(simspec_fname, format='fits', hdu='OBSCONDITIONS')
 obsconditions_dict = [dict(zip(obsconditions.colnames, row)) for row in obsconditions][0]
 if debug and exptime is not None:
-    print(f'# updating exptime to be {exptime}s.')
+    logging.info(f'# updating exptime to be {exptime}s.')
     obsconditions_dict['EXPTIME'] = exptime
 
 # update the exptime in the fibermap
@@ -91,7 +107,7 @@ def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_fil
     spectra_fibermap is essentially fibermap with added EXPID and NIGHT columns
     (ref: https://github.com/desihub/desisim/blob/8308fc44cdc86aea14155b0db5c6f529eeea8423/py/desisim/scripts/quickspectra.py#L103)
     """
-    print(f'## running save_spectra_for_petal ...')
+    logging.info(f'## running save_spectra_for_petal ...')
     scale = 1e17          # not exactly sure where this is coming from
     specdata = None       # initialize variable for the Spectra object
     nspec = flux_this_petal.shape[0] # number of spectra
@@ -104,7 +120,7 @@ def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_fil
     resolution = {}
     for camera in simulator.instrument.cameras:
         R = Resolution(camera.get_output_resolution_matrix())
-        resolution[camera.name] = np.tile(R.to_fits_array(), [nspec, 1, 1])
+        resolution[camera.name] = np.tile(R.to_fits_array(), [nspec, 1, 1]) # need to check if this is right since quickgen seems to have a different way to handle this
 
     # create a Spectra object for each camera
     for table in simulator.camera_output :
@@ -165,7 +181,7 @@ def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_fil
         spectra_filename = f'{spectra_filename}.fits'
     desispec.io.write_spectra(spectra_filename, specdata)
 
-    print(f'## ** wrote {spectra_filename}')
+    logging.info(f'## ** wrote {spectra_filename}')
 # ------------------------------------------------------------------------
 fibermap_by_petal = fibermap.group_by('PETAL_LOC')
 
@@ -182,11 +198,12 @@ for col in cols_to_add:
 petal_inds = range(10)
 if debug: petal_inds = [0]
 
+logging.info(f'looping over {len(petal_inds)} petals\n')
 for petal_ind in petal_inds:
     start1 = time.time()
     fibermap_this_petal = fibermap_by_petal.groups[petal_ind]
     petal = np.unique(fibermap_this_petal['PETAL_LOC'].quantity)[0]
-    print(f'## working with petal {petal}')
+    logging.info(f'## working with petal {petal}')
 
     fibers_this_petal = fibermap_this_petal['FIBER'].quantity
     flux_this_petal = flux_all_fibers[fibers_this_petal, :] # assuming row index = fiber number NEED TO UDPATE
@@ -225,7 +242,71 @@ for petal_ind in petal_inds:
                            skyerr=skyerr,
                            nfiber_to_plot=nfiber
                           )
-    print(f'## time taken for petal {petal_ind}: {(time.time() - start1)/60: .2f} min')
+    logging.info(f'## time taken for petal {petal_ind}: {(time.time() - start1)/60: .2f} min')
 
-print('## all done')
-print(f'## time taken: {(time.time() - start0)/60: .2f} min')
+    # cframe
+    nspec_per_petal = 500
+    waves = {}
+    resolution = {}
+    for camera in simulator.instrument.cameras:
+        waves[camera.name] = (camera.output_wavelength.to(u.Angstrom).value.astype(np.float32))
+        maxbin = len(waves[camera.name])
+        cframe_observedflux = np.zeros((nspec_per_petal, 3, maxbin))  # calibrated object flux
+        cframe_ivar = np.zeros((nspec_per_petal, 3, maxbin)) # inverse variance of calibrated object flux
+        cframe_rand_noise = np.zeros((nspec_per_petal, 3 ,maxbin)) # random Gaussian noise to calibrated flux
+
+        R = Resolution(camera.get_output_resolution_matrix())
+        resolution[camera.name] = np.tile(R.to_fits_array(), [nspec_per_petal, 1, 1])
+        #print(resolution[camera.name].shape)
+
+    fluxunits = 1e-17 * u.erg / (u.s * u.cm ** 2 * u.Angstrom)
+    for j in range(nspec_per_petal):
+        for i, output in enumerate(simulator.camera_output):
+            num_pixels = len(output)
+            # Get results for our flux-calibrated output file.
+            cframe_observedflux[j, i, :num_pixels] = 1e17 * output['observed_flux'][:,0]
+            cframe_ivar[j, i, :num_pixels] = 1e-34 * output['flux_inverse_variance'][:,0]
+
+            # Fill brick arrays from the results.
+            camera = output.meta['name']
+
+            # Use the same noise realization in the cframe and frame, without any
+            # additional noise from sky subtraction for now.
+            cframe_rand_noise[j, i, :num_pixels] = 1e17 * (
+                output['flux_calibration'][:,0] * output['random_noise_electrons'][:,0])
+
+    #
+    armName = {"b":0, "r":1, "z":2}
+
+    for channel in 'brz':
+        start = min(fibermap_this_petal['FIBER'])
+        end = max(fibermap_this_petal['FIBER'])+1
+        #print(start, end)
+
+        num_pixels = len(waves[channel])
+        camera = "{}{}".format(channel, petal_ind)
+        # Write cframe file
+        cframeFileName = desispec.io.findfile("cframe", night, int(expid), camera)
+        cframeFlux = cframe_observedflux[:, armName[channel],:num_pixels] + \
+                                    cframe_rand_noise[:, armName[channel],:num_pixels]
+        cframeIvar = cframe_ivar[:, armName[channel], :num_pixels]
+
+        name = cframeFileName.split('/')[-1]
+        cframeFileName = f'{path}/{name}'
+
+        meta = obsconditions_dict
+        meta['CAMERA'] = camera
+        cframe = Frame(waves[channel], cframeFlux, cframeIvar, \
+                       resolution_data=resolution[channel],
+                       spectrograph=petal_ind,
+                       fibermap=fibermap_this_petal,
+                       meta=meta
+                      )
+        compute_and_append_frame_scores(cframe)
+        desispec.io.frame.write_frame(cframeFileName, cframe)
+
+    desisim.specsim._simulators.clear()
+    logging.info('done with this petal.\n\n')
+
+logging.info('## all done')
+logging.info(f'## time taken: {(time.time() - start0)/60: .2f} min')
