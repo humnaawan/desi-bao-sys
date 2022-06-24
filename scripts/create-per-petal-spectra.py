@@ -1,7 +1,8 @@
 # ------------------------------------------------------------------------
 # this script takes in the fibermap and simspec simulation files and
-# produces the spectra. if using the debug option, will produce the
-# per-petal fibermap and simspec files.
+# produces the spectra and cframe files. if using the debug option, will
+# just run things for one petal; all outputs should have _debug tag.
+#
 # most of the code is based on quickspectra/quickquasars
 # ------------------------------------------------------------------------
 from astropy.io import fits
@@ -101,27 +102,81 @@ if debug and exptime is not None:
 fibermap['EXPTIME'][:] = obsconditions_dict['EXPTIME']
 #print(f'obsconditions_dict: {obsconditions_dict}')
 # ------------------------------------------------------------------------------------
-def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_filename,
-                       seed=10, skyerr=0, nfiber_to_plot=400):
-    """
-    spectra_fibermap is essentially fibermap with added EXPID and NIGHT columns
-    (ref: https://github.com/desihub/desisim/blob/8308fc44cdc86aea14155b0db5c6f529eeea8423/py/desisim/scripts/quickspectra.py#L103)
-    """
+def save_data_for_this_petal(simulator, nspec, fibermap, spectra_fibermap, spectra_filename,
+                             seed=10, skyerr=0, debug=False):
+    #
     logging.info(f'## running save_spectra_for_petal ...')
-    scale = 1e17          # not exactly sure where this is coming from
-    specdata = None       # initialize variable for the Spectra object
-    nspec = flux_this_petal.shape[0] # number of spectra
+    scale = 1e17          # not exactly sure where this is coming from but this goes into the flux units
     # initialize random state
     random_state = np.random.RandomState(seed)
     # skyscale
     skyscale = skyerr * random_state.normal(size=simulator.num_fibers)
 
-    # set up the Resolution for each camera
-    resolution = {}
+    # ---------------------------------------
+    # first deal with the cframe file
+    # set up the Resolution for each camera, alongside the waves for each channel (3 of them); need for cframe files
+    waves, resolution = {}, {}
     for camera in simulator.instrument.cameras:
+        waves[camera.name] = (camera.output_wavelength.to(u.Angstrom).value.astype(np.float32))
+        maxbin = len(waves[camera.name])
+        cframe_observedflux = np.zeros((nspec, 3, maxbin))      # calibrated object flux
+        cframe_ivar = np.zeros((nspec, 3, maxbin))              # inverse variance of calibrated object flux
+        cframe_noise = np.zeros((nspec, 3, maxbin))             # noise to calibrated flux
+
         R = Resolution(camera.get_output_resolution_matrix())
         resolution[camera.name] = np.tile(R.to_fits_array(), [nspec, 1, 1]) # need to check if this is right since quickgen seems to have a different way to handle this
 
+    # store the flux etc for cframe file
+    for j in range(nspec): #:
+        for i, output in enumerate(simulator.camera_output):
+            num_pixels = len(output)
+            # get the flux
+            cframe_observedflux[j, i, :num_pixels] = scale * output['observed_flux'][:, j]
+            # get the variance
+            cframe_ivar[j, i, :num_pixels] = (1/scale**2) * output['flux_inverse_variance'][:, j]
+            # noise realization; with additional noise from sky subtraction if applicable
+            cframe_noise[j, i, :num_pixels] = scale * (output['flux_calibration'][:, j] * output['random_noise_electrons'][:, j])
+            if np.any(skyscale):
+                cframe_noise[j, i, :num_pixels] += scale * ((output['num_sky_electrons'][:, j] * skyscale) * output['flux_calibration'][:, j])
+
+    # now lets create the cframe file
+    arm_name = {'b': 0, 'r': 1, 'z': 2}
+    for channel in 'brz':
+        start = min(fibermap['FIBER'])
+        end = max(fibermap['FIBER'])+1
+
+        num_pixels = len(waves[channel])
+        camera = "{}{}".format(channel, petal_ind)
+        # write the cframe file
+        cframe_fname = desispec.io.findfile('cframe', night, int(expid), camera)
+        cframe_flux_thischannel = cframe_observedflux[:, arm_name[channel], :num_pixels] + \
+                                    cframe_noise[:, arm_name[channel], :num_pixels]
+        cframe_ivar_thischannel = cframe_ivar[:, arm_name[channel], :num_pixels]
+
+        name = cframe_fname.split('/')[-1]
+        if skyerr != 0:
+            name = name.split('.fits')[0]
+            name = f'{name}_skyerr{skyerr}.fits'
+        if debug:
+            name = name.split('.fits')[0]
+            name = f'{name}_debug.fits'
+        cframe_fname = f'{path}/{name}'
+
+        meta = obsconditions_dict
+        meta['CAMERA'] = camera
+        cframe = Frame(waves[channel], cframe_flux_thischannel, cframe_ivar_thischannel, \
+                       resolution_data=resolution[channel],
+                       spectrograph=petal_ind,
+                       fibermap=fibermap,
+                       meta=meta
+                      )
+        compute_and_append_frame_scores(cframe)
+        desispec.io.frame.write_frame(cframe_fname, cframe)
+        logging.info(f'## wrote {cframe_fname}')
+
+    # -------------------------------------
+    # now save the Spectra object
+    specdata = None
     # create a Spectra object for each camera
     for table in simulator.camera_output :
         wave = table['wavelength'].astype(float)
@@ -138,7 +193,7 @@ def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_fil
         ivar = table['flux_inverse_variance'].T.astype(float)
         band  = table.meta['name'].strip()[0]
 
-        # scale things - again dont know why
+        # scale things
         flux = flux * scale
         ivar = ivar / scale**2
         # mask - not sure wyh its zero
@@ -158,22 +213,6 @@ def save_petal_spectra(simulator, flux_this_petal, spectra_fibermap, spectra_fil
         else :
             specdata.update(spec)
 
-        if debug:
-            plt.clf()
-            plt.plot(wave_simspec, flux_this_petal[nfiber_to_plot, :], 'k-', label='truth')
-            plt.plot(wave, flux[nfiber_to_plot, :], 'x', label=f'input {band}')
-            #for band_ in specdata.bands:
-            #    plt.plot(specdata.wave[band_], specdata.flux[band_][nfiber_to_plot, :],
-            #             '.', label=f'Spectra {band_}')
-            plt.plot(specdata.wave[band], specdata.flux[band][nfiber_to_plot, :],
-                         '.', label=f'Spectra {band}')
-
-            #plt.ylim(-0.5, 2.5)
-            plt.legend(bbox_to_anchor=(1,1))
-            plt.xlabel('wavelength')
-            plt.ylabel('flux')
-            plt.title(f'nfiber in this petal: {nfiber_to_plot}')
-            plt.show()
     # write out the file
     if skyerr != 0:
         spectra_filename = f'{spectra_filename}_skyerr{skyerr}.fits'
@@ -230,80 +269,17 @@ for petal_ind in petal_inds:
                                                )
     # set up the output filename
     spectra_filename = f'{path}spectra-{petal_ind}-{expid}'
-
     if debug: spectra_filename += f'_exptime-{simulator.observation.exposure_time.value}'
 
     # save the spectra for this petal
-    save_petal_spectra(simulator=simulator,
-                           flux_this_petal=flux_this_petal,
-                           spectra_fibermap=spectra_fibermap_this_petal,
-                           spectra_filename=spectra_filename,
-                           seed=10,
-                           skyerr=skyerr,
-                           nfiber_to_plot=nfiber
-                          )
+    save_data_for_this_petal(simulator=simulator,
+                             nspec=flux_this_petal.shape[0],
+                             spectra_fibermap=spectra_fibermap_this_petal,
+                             spectra_filename=spectra_filename,
+                             fibermap=fibermap_this_petal,
+                             seed=10, skyerr=skyerr, debug=debug)
     logging.info(f'## time taken for petal {petal_ind}: {(time.time() - start1)/60: .2f} min')
 
-    # cframe
-    nspec_per_petal = 500
-    waves = {}
-    resolution = {}
-    for camera in simulator.instrument.cameras:
-        waves[camera.name] = (camera.output_wavelength.to(u.Angstrom).value.astype(np.float32))
-        maxbin = len(waves[camera.name])
-        cframe_observedflux = np.zeros((nspec_per_petal, 3, maxbin))  # calibrated object flux
-        cframe_ivar = np.zeros((nspec_per_petal, 3, maxbin)) # inverse variance of calibrated object flux
-        cframe_rand_noise = np.zeros((nspec_per_petal, 3 ,maxbin)) # random Gaussian noise to calibrated flux
-
-        R = Resolution(camera.get_output_resolution_matrix())
-        resolution[camera.name] = np.tile(R.to_fits_array(), [nspec_per_petal, 1, 1])
-        #print(resolution[camera.name].shape)
-
-    fluxunits = 1e-17 * u.erg / (u.s * u.cm ** 2 * u.Angstrom)
-    for j in range(nspec_per_petal):
-        for i, output in enumerate(simulator.camera_output):
-            num_pixels = len(output)
-            # Get results for our flux-calibrated output file.
-            cframe_observedflux[j, i, :num_pixels] = 1e17 * output['observed_flux'][:,0]
-            cframe_ivar[j, i, :num_pixels] = 1e-34 * output['flux_inverse_variance'][:,0]
-
-            # Fill brick arrays from the results.
-            camera = output.meta['name']
-
-            # Use the same noise realization in the cframe and frame, without any
-            # additional noise from sky subtraction for now.
-            cframe_rand_noise[j, i, :num_pixels] = 1e17 * (
-                output['flux_calibration'][:,0] * output['random_noise_electrons'][:,0])
-
-    #
-    armName = {"b":0, "r":1, "z":2}
-
-    for channel in 'brz':
-        start = min(fibermap_this_petal['FIBER'])
-        end = max(fibermap_this_petal['FIBER'])+1
-        #print(start, end)
-
-        num_pixels = len(waves[channel])
-        camera = "{}{}".format(channel, petal_ind)
-        # Write cframe file
-        cframeFileName = desispec.io.findfile("cframe", night, int(expid), camera)
-        cframeFlux = cframe_observedflux[:, armName[channel],:num_pixels] + \
-                                    cframe_rand_noise[:, armName[channel],:num_pixels]
-        cframeIvar = cframe_ivar[:, armName[channel], :num_pixels]
-
-        name = cframeFileName.split('/')[-1]
-        cframeFileName = f'{path}/{name}'
-
-        meta = obsconditions_dict
-        meta['CAMERA'] = camera
-        cframe = Frame(waves[channel], cframeFlux, cframeIvar, \
-                       resolution_data=resolution[channel],
-                       spectrograph=petal_ind,
-                       fibermap=fibermap_this_petal,
-                       meta=meta
-                      )
-        compute_and_append_frame_scores(cframe)
-        desispec.io.frame.write_frame(cframeFileName, cframe)
 
     desisim.specsim._simulators.clear()
     logging.info('done with this petal.\n\n')
