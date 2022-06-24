@@ -1,67 +1,93 @@
+# ------------------------------------------------------------------------
+# this script takes in qso exposure list and uses it to group and coadd
+# spectra for each healpix pixel.
+# ------------------------------------------------------------------------
 import os
 import time
 import datetime
 import sys
 import logging
-
-from desispec.scripts import group_spectra, coadd_spectra
+import subprocess
+import pandas as pd
+import numpy as np
 
 from optparse import OptionParser
 
 parser = OptionParser()
-parser.add_option('--data-path',
-                  dest='data_path', type='str',
-                  help='path to directory with all the data \
-                        (i.e., where folder name = night)')
-parser.add_option('--night',
-                  dest='night', type='str',
-                  help='night to consider')
-parser.add_option('--expid',
-                  dest='expid', type='str',
-                  help='exposure ID to consider')
+parser.add_option('--exposures-path',
+                  dest='exposures_path', type='str',
+                  help='path to directory with all exposures folder with night sub-folders.')
+parser.add_option('--exposures-list-path',
+                  dest='exposures_list_path', type='str',
+                  help='path to csv file with the exposures and their corresponding healpix numbers.')
+parser.add_option('--outdir',
+                  dest='outdir', type='str',
+                  help='path to the directory with the spectra-{nside} folder would sit.')
+parser.add_option('--nside',
+                  dest='nside', type=int,
+                  help='HEALPix resolution param')
+parser.add_option('--debug',
+                  action='store_true', dest='debug', default=False,
+                  help='run things in debug mode => some consider only one HEALPix pixel.')
 (options, args) = parser.parse_args()
 print('\n## inputs: %s' % options)
-data_path = options.data_path
-night = options.night
-expid = options.expid
+exposures_path = options.exposures_path
+exposures_list_path = options.exposures_list_path
+main_outdir = options.outdir
+nside = options.nside
+debug = options.debug
 # ------------------------------------------------------------------------
 start0 = time.time()
 
-path = f'{data_path}/{night}/{expid}/'
-
 # set up the logger
 temp = f'{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
-logging.basicConfig(filename=f'{path}/log_{temp}.log',
+logging.basicConfig(filename=f'{main_outdir}/log_{temp}.log',
                     level=logging.DEBUG, filemode='w', 
                     #format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p'
                    )
 logging.info(f'running {sys.argv[0]}')
-logging.info('\n## inputs: %s' % options)
+logging.info(f'\n## inputs: {options}\n')
+
+subdir = f'{main_outdir}/spectra-{nside}'
+if not os.path.exists(subdir):
+    os.makedirs(subdir, exist_ok=True)
+    print(f'## created the directory {subdir}')
+
+df = pd.read_csv(exposures_list_path)
+pix_list = np.unique(df['HEALPIX'])
+if debug: pix_list = pix_list[0:1]
+
+for hp_pixel in pix_list:
+    logging.info(f'## running things for pixelnum = {hp_pixel}')
+    subdir = f'{main_outdir}/spectra-{nside}/{hp_pixel}'
+    if not os.path.exists(subdir):
+        os.makedirs(subdir, exist_ok=True)
+        logging.info(f'## created the directory {subdir}')
+
+    bash_command = 'desi_group_spectra ' + \
+                    f'--expfile {exposures_list_path} ' + \
+                    f'--outfile {subdir}/grouped-{nside}-{hp_pixel}.fits ' + \
+                    f'--reduxdir {exposures_path} ' + \
+                    f'--nside {nside} --healpix {hp_pixel}'
+    logging.info(f'running bash_command = {bash_command}')
+    process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+    if error is not None:
+        print(error)
+    logging.info(f'command output: {output}')
+    logging.info(f'command error: {error}\n')
 
 
-nside = 64
-npetals = 1 #10
-
-# loop over all spectrographs
-for npetal in range(npetals):
-    # group things - pass all cframes of a given spectrograph
-    cframes = [f'{path}/{f}' for f in os.listdir(path) if f.__contains__(f'{npetal}-{expid}.fits') and f.startswith('cframe')]           
-    outfile = f'{path}/grouped-{npetal}-{expid}.fits'
-    options = [f'--nside={nside}',
-               f'--outfile={outfile}',
-               '--inframes'] + cframes
-    print(f'\nOPTIONS:  {options}\n\n')
-    args = group_spectra.parse(options)
-    group_spectra.main(args)
-    
-    # now coadd things
-    infile = outfile
-    outfile = f'{path}/coadd-{npetal}-{expid}.fits'
-    options = ['--infile', infile,
-               '--outfile', outfile]
-
-    args = coadd_spectra.parse(options)
-    coadd_spectra.main(args)
+    bash_command = 'desi_coadd_spectra ' + \
+                    f'--infile {subdir}/grouped-{nside}-{hp_pixel}.fits ' + \
+                    f'--outfile {subdir}/spectra-{nside}-{hp_pixel}.fits '
+    logging.info(f'running bash_command = {bash_command}')
+    process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+    if error is not None:
+        print(error)
+    logging.info(f'command output: {output}')
+    logging.info(f'command error: {error}\n')
 
 logging.info('\n## all done')
 logging.info(f'## time taken: {(time.time() - start0)/60: .2f} min')
