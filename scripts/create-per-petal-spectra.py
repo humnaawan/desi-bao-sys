@@ -9,7 +9,7 @@ from astropy.io import fits
 from astropy.table import Table
 import astropy.units as u
 import numpy as np
-import matplotlib.pyplot as plt
+from settings import *
 
 import desisim.simexp
 import desimodel.io
