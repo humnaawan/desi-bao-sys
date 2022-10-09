@@ -6,6 +6,8 @@ night=20191206
 get_qso_list=1
 group_and_coadd_spectra=1
 nside=16
+
+get_zfile=1
 # --------------------------------------------------------------------------
 source /global/cfs/cdirs/desi/software/desi_environment.sh master
 
@@ -41,4 +43,13 @@ then
                         --exposures-path=${basepath} \
                         --nside=${nside} \
                         --outdir=${datapath}
+fi
+# ---------------------------------------------------------
+if [ $get_zfile == 1 ];
+then
+     printf '\n## running save-zfile-per-pixel.py ...\n'
+     python /global/homes/a/awan/desi/desi-bao-sys/scripts/get-zfile-per-pixel.py \
+                        --simspec-path=${datapath} \
+                        --coadds-path=${datapath} \
+                        --nside=${nside}
 fi
