@@ -9,6 +9,7 @@ nside=16
 
 get_zfile=1
 get_zcatalog=1
+get_drqcatalog=1
 # --------------------------------------------------------------------------
 source /global/cfs/cdirs/desi/software/desi_environment.sh master
 
@@ -64,4 +65,15 @@ then
                     --minimal \
                     --prefix='ztrue'\
                     > ${datapath}'out_desi_zcatalog.log'
+fi
+# ---------------------------------------------------------
+if [ $get_drqcatalog == 1 ];
+then
+     printf '\n## running get_drqcatalog.py ...\n'
+     module load python
+     conda activate picca_pip
+     python /global/homes/a/awan/desi/desi-bao-sys/scripts/get-drqcatalog.py \
+                    --zcat-path=${datapath}'zcat.fits' \
+                    --outdir=${datapath} \
+                    > ${datapath}'out_drqcatalog.log'
 fi
