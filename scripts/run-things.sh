@@ -8,6 +8,7 @@ group_and_coadd_spectra=1
 nside=16
 
 get_zfile=1
+get_zcatalog=1
 # --------------------------------------------------------------------------
 source /global/cfs/cdirs/desi/software/desi_environment.sh master
 
@@ -52,4 +53,15 @@ then
                         --simspec-path=${datapath} \
                         --coadds-path=${datapath} \
                         --nside=${nside}
+fi
+# ---------------------------------------------------------
+if [ $get_zcatalog == 1 ];
+then
+     printf '\n## running desi_zcatalog ...\n'
+     # https://github.com/desihub/desispec/blob/main/bin/desi_zcatalog
+     desi_zcatalog --indir=${datapath} \
+                    --outfile=${datapath}'zcat.fits' \
+                    --minimal \
+                    --prefix='ztrue'\
+                    > ${datapath}'out_desi_zcatalog.log'
 fi
