@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------
 # this script takes in the fibermap and simspec simulation files and
 # produces the spectra and cframe files. if using the debug option, will
-# just run things for one petal; all outputs should have _debug tag.
+# just run things for one petal; all outputs will then have _debug tag.
 #
 # most of the code is based on quickspectra/quickquasars
 # ------------------------------------------------------------------------
@@ -68,7 +68,7 @@ start0 = time.time()
 path = f'{data_path}/{night}/{expid}/'
 
 # set up the logger
-temp = f'{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
+temp = f'create-per-pixel-spectra_{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
 if debug: temp = f'debug_{temp}'
 logging.basicConfig(filename=f'{path}/log_{temp}.log',
                     level=logging.DEBUG, filemode='w',

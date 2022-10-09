@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------
-# this script takes in qso exposure list and uses it to group and coadd
-# spectra for each healpix pixel.
+# this script takes in the qso exposure list and uses it to group and coadd
+# spectra in each healpix pixel.
 # ------------------------------------------------------------------------
 import os
 import time
@@ -40,7 +40,7 @@ debug = options.debug
 start0 = time.time()
 
 # set up the logger
-temp = f'{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
+temp = f'group+coadd_{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
 logging.basicConfig(filename=f'{main_outdir}/log_{temp}.log',
                     level=logging.DEBUG, filemode='w', 
                     #format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p'

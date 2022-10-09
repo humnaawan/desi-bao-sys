@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------
-# this script takes in all exposures and created a list of all the QSOs;
+# this script takes in all exposures and creates a list of all the QSOs;
 # needed for per-healpix-pixel grouping and coaddition.
 # ------------------------------------------------------------------------
 import os
@@ -31,7 +31,7 @@ nside = options.nside
 start0 = time.time()
 
 # set up the logger
-temp = f'{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
+temp = f'get-qso-list_{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
 logging.basicConfig(filename=f'{data_path}/log_{temp}.log',
                     level=logging.DEBUG, filemode='w', 
                     #format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p'
