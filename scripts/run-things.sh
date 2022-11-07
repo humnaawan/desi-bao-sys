@@ -10,6 +10,7 @@ nside=16
 get_zfile=1
 get_zcatalog=1
 get_drqcatalog=1
+run_picca=1
 # --------------------------------------------------------------------------
 source /global/cfs/cdirs/desi/software/desi_environment.sh master
 
@@ -76,4 +77,21 @@ then
                     --zcat-path=${datapath}'zcat.fits' \
                     --outdir=${datapath} \
                     > ${datapath}'out_drqcatalog.log'
+fi
+# ---------------------------------------------------------
+if [ $run_picca == 1 ];
+then
+     printf '\n## running run_picca.py ...\n'
+     module load python
+     conda activate picca_pip
+     python /global/homes/a/awan/desi/desi-bao-sys/scripts/run-picca.py \
+                         --outdir=${basepath}'picca-output/' \
+                         --zcat-drq-path=${datapath}'zcat_drq.fits' \
+                         --spectra-path=${datapath}'spectra-16/' \
+                         --get-deltas \
+                         --calc-corrs \
+                         --get-dmas \
+                         --fit-bao \
+                         --inis-path=${basepath}/'picca-inis/' \
+                         > ${basepath}'picca-output/out_runpicca.log'
 fi

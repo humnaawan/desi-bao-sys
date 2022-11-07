@@ -6,8 +6,15 @@ from astropy.io import fits
 import numpy as np
 import os
 from settings import *
+import fitsio
+import scipy as sp
+import h5py
+from picca.wedgize import wedge
 
-__all__ = ['compare_spectra_template_vs_calibrated', 'compare_spectra_groupedcoadded_vs_not']
+__all__ = ['compare_spectra_template_vs_calibrated',
+           'compare_spectra_groupedcoadded_vs_not',
+           'plot_delta_attributes', 'plots_cfs', 'plot_baofit'
+           ]
 
 # ------------------------------------------------------------------------
 # function to plot template spectra and calibration spectra (From the Spectra files and the cframe files)
@@ -191,3 +198,214 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, nside,
         fig.savefig('%s/%s' % (outdir, fname), format='png', bbox_inches='tight')
         plt.close()
         print('## saved %s' % fname )
+
+def plot_delta_attributes(data_path, outdir):
+    """
+    data_path: str: path to directory that contains the delta_attributes.fits.gz file.
+    """
+    # adapted version of https://desi.lbl.gov/trac/attachment/wiki/LymanAlphaWG/how_to_run_picca/plot_delta_attributes.py
+    data = fitsio.FITS(f'{data_path}/delta_attributes.fits.gz')
+
+    f, (axs) = plt.subplots(nrows=2, ncols=3, figsize=(12,5))
+    axs[-1, -1].axis('off')
+
+    ### Stack
+    loglam = data[1]['LOGLAM'][:]
+    stack  = data[1]['STACK'][:]
+    cut = (stack!=0.) & (data[1]['WEIGHT'][:]>0.)
+    loglam = loglam[cut]
+    stack  = stack[cut]
+    axs[0][0].plot(10.**loglam, stack, linewidth=1)
+    axs[0][0].grid()
+    axs[0][0].set_xlabel(r'$\lambda_{\mathrm{Obs.}} \, [\AA]$',fontsize=20)
+    axs[0][0].set_ylabel(r'$\mathrm{\overline{Deltas}}$',fontsize=20)
+
+    ### ETA
+    loglam    = data[2]['LOGLAM'][:]
+    eta       = data[2]['ETA'][:]
+    nb_pixels = data[2]['NB_PIXELS'][:]
+    cut = (nb_pixels>0.)&(eta!=1.)
+    loglam = loglam[cut]
+    eta    = eta[cut]
+    axs[0][1].errorbar(10.**loglam, eta, linewidth=1)
+    axs[0][1].grid()
+    axs[0][1].set_xlabel(r'$\lambda_{\mathrm{Obs.}} \, [\AA]$',fontsize=20)
+    axs[0][1].set_ylabel(r'$\eta$',fontsize=20)
+
+    ### VAR_LSS
+    loglam    = data[2]['LOGLAM'][:]
+    var_lss   = data[2]['VAR_LSS'][:]
+    nb_pixels = data[2]['NB_PIXELS'][:]
+    cut       = (nb_pixels>0.)&(var_lss!=0.1)
+    loglam    = loglam[cut]
+    var_lss   = var_lss[cut]
+    axs[0][2].errorbar(10.**loglam, var_lss, linewidth=1)
+    axs[0][2].grid()
+    axs[0][2].set_xlabel(r'$\lambda_{\mathrm{Obs.}} \, [\AA]$',fontsize=20)
+    axs[0][2].set_ylabel(r'$\sigma^{2}_{\mathrm{LSS}}$',fontsize=20)
+
+    ### FUDGE
+    loglam    = data[2]['LOGLAM'][:]
+    fudge     = data[2]['FUDGE'][:]
+    nb_pixels = data[2]['NB_PIXELS'][:]
+    cut       = (nb_pixels>0.)&(fudge!=1.e-7)
+    loglam    = loglam[cut]
+    fudge     = fudge[cut]
+    axs[1][0].errorbar(10.**loglam, fudge, linewidth=1)
+    axs[1][0].grid()
+    axs[1][0].set_xlabel(r'$\lambda_{\mathrm{Obs.}} \, [\AA]$',fontsize=20)
+    axs[1][0].set_ylabel(r'$\mathrm{Fudge}$',fontsize=20)
+
+    ### Mean cont
+    loglam_rest = data[3]['LOGLAM_REST'][:]
+    mean_cont   = data[3]['MEAN_CONT'][:]
+    cut = (mean_cont!=0.) & (data[3]['WEIGHT'][:]>0.)
+    loglam_rest = loglam_rest[cut]
+    mean_cont   = mean_cont[cut]
+    axs[1][1].plot(10.**loglam_rest, mean_cont, linewidth=1)
+    axs[1][1].grid()
+    axs[1][1].set_xlabel(r'$\lambda_{\mathrm{R.F.}} \, [\AA]$', fontsize=20)
+    axs[1][1].set_ylabel(r'$\mathrm{\overline{Flux}}$', fontsize=20)
+
+    plt.tight_layout()
+    fname = f'{outdir}/plot_delta_attributes.png'
+    plt.savefig(fname, format='png', bbox_inches='tight')
+    plt.close()
+
+    return fname
+
+#
+def plots_cfs(data_path, outdir, data_tag):
+    # adapted version of https://desi.lbl.gov/trac/attachment/wiki/LymanAlphaWG/how_to_run_picca/plot_xcf.py
+    """
+    data_path: str: path to directory that contains e.g. the cf_lyalya_lyalya.fits.gz file.
+    data_tag: str: e.g. lyalya_lyalya
+    """
+    data = fits.open(f'{data_path}/cf_lyalya_lyalya.fits.gz')
+
+    #-- these are 100x50=5000 bins vectors containing the separations of each bin
+    rp = data[1].data.RP   #-- this is radial separation r_parallel
+    rt = data[1].data.RT   #-- this is transverse separation r_perp
+    z = data[1].data.Z     #-- this is the mean redshift (almost constant)
+    we = data[2].data.WE   #-- this is the weight associated to each bin, and each pixel
+    cf = data[2].data.DA   #-- this is the correlation function in each bin and each pixel
+
+    n_p = data[1].header['NP']
+    n_t = data[1].header['NT']
+    rpmin = data[1].header['RPMIN']
+    rpmax = data[1].header['RPMAX']
+    rtmax = data[1].header['RTMAX']
+
+    rper = (np.arange(n_t)+0.5)*rtmax/n_t
+    rpar = np.arange(rpmin+2, rpmax+2, (rpmax - rpmin)/n_p)
+
+    #--  number of pixels and number of bins
+    npix, nbins = cf.shape
+
+    #-- doing a weighted average to get the final correlation function
+    mcf = np.sum(cf*we, axis=0)/np.sum(we, axis=0)
+    mwe = np.sum(we, axis=0)
+
+    r = np.sqrt(rp**2+rt**2)
+
+    #-- making a 2D plot of the correlation function
+    plt.figure(figsize=(8, 7))
+    plt.ion()
+    step = int(len(rper))
+    plt.pcolormesh( rper, rpar, (r*mcf).reshape(int(len(r)/step), step), vmin=-0.4, vmax=0.4, cmap=plt.cm.seismic)
+    plt.xticks(np.arange(0, int(rpmax)+1, step=step))
+    plt.yticks(np.arange(int(rpmin), int(rpmax)+1, step=step))
+    plt.xlabel(r'$r_\perp [h^{-1} Mpc]$', fontsize=14)
+    plt.ylabel(r'$r_\parallel [h^{-1} Mpc]$', fontsize=14)
+    plt.colorbar()
+    plt.title('cf_lyalya_lyalya')
+    fname = f'{outdir}/plot_cf_{data_tag}.png'
+
+    plt.savefig(fname, format='png', bbox_inches='tight')
+    plt.close()
+
+    return fname
+
+def plot_baofit(path_cf, outdir, data_tag, path_baofit=None, power=2,
+                 mus=[1., 0.95, 0.8, 0.5, 0], fit_rmax=200.,
+                 absMus=True):
+    # need to add doc strings for the input params
+    # adapted from https://desi.lbl.gov/trac/attachment/wiki/LymanAlphaWG/how_to_run_picca/plot_wedges.py
+    #- Read correlation function and covariance matrix
+    h = fitsio.FITS(path_cf)
+    da = h[1]['DA'][:]
+    co = h[1]['CO'][:]
+    hh = h[1].read_header()
+    rpmin = hh['RPMIN']
+    rpmax = hh['RPMAX']
+    rtmin = 0
+    rtmax = hh['RTMAX']
+    nrp = hh['NP']
+    nrt = hh['NT']
+    h.close()
+
+    #-- Read fit h5 file if there is one
+    if path_baofit:
+        ff = h5py.File(path_baofit, 'r')
+        keys = list(ff.keys())
+        for k in keys:
+            if k != 'best fit' and k != 'minos':
+                base = k
+                break
+        fit = ff[base+'/fit'][...]
+        attr = dict(ff['best fit'].attrs)
+        chi2 = attr['fval']
+        ndata = attr['ndata']
+        npars = attr['npar']
+        rchi2 = chi2/(ndata-npars)
+        print(f'chi2/(ndata-npars) = {chi2}/({ndata}-{npars}) = {rchi2}')
+        ff.close()
+
+    f, (axs) = plt.subplots(nrows=2, ncols=2, figsize=(12,6))
+
+    j=0
+
+    for i, (mumax,mumin) in enumerate(zip(mus[:-1],mus[1:])):
+        b = wedge(mumin=mumin, mumax=mumax,
+                                rpmin=rpmin, rpmax=rpmax,
+                                rtmin=rtmin, rtmax=rtmax,
+                                nrt=nrt, nrp=nrp, absoluteMu=absMus,
+                                rmin=0., rmax=min(rpmax, rtmax),
+                                nr=min(nrt, nrp))
+        r,d,c = b.wedge(da,co)
+
+        nrows = 2
+
+        #-- Wedges and best model
+        y = d*r**power
+        dy = np.sqrt(c.diagonal())*r**power
+        if absMus:
+            axs[j//2][j%2].errorbar(
+                r, y, dy, fmt="o",
+                label=r"${}<|\mu|<{}$".format(mumin,mumax))
+        else:
+            axs[j//2][j%2].errorbar(
+                r, y, dy, fmt="o",
+                label=r"${}<\mu<{}$".format(mumin,mumax))
+        if path_baofit:
+            r, model, _ = b.wedge(fit, co)
+            ym = model*r**power
+            w = r < fit_rmax
+            r = r[w]
+            ym = ym[w]
+            axs[j//2][j%2].plot(r, ym, linewidth=2, color="red", label='Fit')
+
+        axs[j//2][j%2].set_ylabel(r"$r^{power}\xi(r)$".format(power=power))
+        if j//2==1:
+            axs[j//2][j%2].set_xlabel(r"$r \, [h^{-1}\, \mathrm{Mpc}]$")
+        axs[j//2][j%2].legend(loc="upper right", fontsize=12)
+        axs[j//2][j%2].grid(True)
+        j+=1
+
+        plt.tight_layout()
+
+    fname = f'{outdir}/plot_wedges_{data_tag}.png'
+    plt.savefig(fname, format='png', bbox_inches='tight')
+    plt.close()
+
+    return fname
