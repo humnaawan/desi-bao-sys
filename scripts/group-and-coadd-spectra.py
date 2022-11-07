@@ -59,10 +59,16 @@ if debug: pix_list = pix_list[0:1]
 
 for hp_pixel in pix_list:
     logging.info(f'## running things for pixelnum = {hp_pixel}')
-    subdir = f'{main_outdir}/spectra-{nside}/{hp_pixel}'
+    subdir = f'{main_outdir}/spectra-{nside}/{hp_pixel//100}'
     if not os.path.exists(subdir):
-        os.makedirs(subdir, exist_ok=True)
-        logging.info(f'## created the directory {subdir}')
+        if not os.path.exists(subdir):
+            os.makedirs(subdir, exist_ok=True)
+            logging.info(f'## created the directory {subdir}')
+    subdir = f'{main_outdir}/spectra-{nside}/{hp_pixel//100}/{hp_pixel}'
+    if not os.path.exists(subdir):
+        if not os.path.exists(subdir):
+            os.makedirs(subdir, exist_ok=True)
+            logging.info(f'## created the directory {subdir}')
 
     bash_command = 'desi_group_spectra ' + \
                     f'--expfile {exposures_list_path} ' + \
