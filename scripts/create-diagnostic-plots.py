@@ -1,9 +1,13 @@
+import time
 from astropy.table import Table
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 from settings import *
+import pandas as pd
+import seaborn as sns
+from desispec.io import read_spectra
 
 from helpers_plots import compare_spectra_template_vs_calibrated, compare_spectra_groupedcoadded_vs_not
 
@@ -38,6 +42,7 @@ path_spec16 = options.path_spec16
 nside = options.nside
 randobj = options.rand_obj
 
+time0 = time.time()
 # ------------------------------------------------------------------------------
 outdir = f'{outdir}/plots-diagnostic/'
 if not os.path.exists(outdir):
@@ -153,3 +158,111 @@ compare_spectra_template_vs_calibrated(exposures_path=path_exposures,
                                        outdir=outdir, savefig=True,
                                        simspec_ind=simspec_ind
                                        )
+# ----------------------------------
+# lets now plot the number of times various objects are observed
+# for QSOs
+nexps, npetals = {}, {}
+# group by hpixel number
+grp = zcat_qso.group_by('HPIXELNUM')
+for i, hpix in enumerate(grp.groups.keys['HPIXELNUM']):
+    # read the grouped spectra file for this pixel
+    grouped = read_spectra(f'{path_spec16}/{hpix//100}/{hpix}/grouped-{nside}-{hpix}.fits')
+    # loop over all the targetid
+    for targetid in grp.groups[i]['TARGETID']:
+        #print(targetid)
+        ind_grouped = np.where(grouped.fibermap['TARGETID'].value == targetid)[0]
+        # add count
+        if len(ind_grouped) > 0:
+            if targetid in nexps:
+
+                nexps[targetid] += [len(ind_grouped)]
+                npetals[targetid] += [len(np.unique(grouped.fibermap['PETAL_LOC'][ind_grouped].value))]
+            else:
+                nexps[targetid] = [len(ind_grouped)]
+                npetals[targetid] = [len(np.unique(grouped.fibermap['PETAL_LOC'][ind_grouped].value))]
+        else:
+            raise ValueError(f'somethings wrong: got no matches for hpix={hpix} and targetid={targetid}')
+# plot
+# now plot
+plt.clf()
+ncols = 2
+fig, axes = plt.subplots(1, ncols)
+plt.subplots_adjust(wspace=0.2)
+fontsize = 14
+
+ax = axes[0]
+df = pd.DataFrame({
+        'nexps': np.array(list(nexps.values())).flatten(),
+        'npetals': np.array(list(npetals.values())).flatten()
+        }
+                  )
+fg = sns.countplot(x='nexps', hue='npetals',
+                   data=df,
+                   saturation=1, ax=ax
+                )
+plt.setp(fg.get_legend().get_texts(), fontsize=fontsize)
+plt.setp(fg.get_legend().get_title(), fontsize=fontsize)
+ax.set_title('QSO (unique objs: %s; total exps: %s)' % (len(np.unique(zcat_qso['TARGETID'])), np.sum(df['nexps'])))
+
+# now lets plot things for QSO
+nexps, npetals = {}, {}
+# group by hpixel number
+grp = zcat_lya.group_by('HPIXELNUM')
+for i, hpix in enumerate(grp.groups.keys['HPIXELNUM']):
+    # read the grouped spectra file for this pixel
+    grouped = read_spectra(f'{path_spec16}/{hpix//100}/{hpix}/grouped-{nside}-{hpix}.fits')
+    # loop over all the targetid
+    for targetid in grp.groups[i]['TARGETID']:
+        #print(targetid)
+        ind_grouped = np.where(grouped.fibermap['TARGETID'].value == targetid)[0]
+        # add count
+        if len(ind_grouped) > 0:
+            if targetid in nexps:
+
+                nexps[targetid] += [len(ind_grouped)]
+                npetals[targetid] += [len(np.unique(grouped.fibermap['PETAL_LOC'][ind_grouped].value))]
+            else:
+                nexps[targetid] = [len(ind_grouped)]
+                npetals[targetid] = [len(np.unique(grouped.fibermap['PETAL_LOC'][ind_grouped].value))]
+        else:
+            raise ValueError(f'somethings wrong: got no matches for hpix={hpix} and targetid={targetid}')
+# plot
+ax = axes[1]
+df = pd.DataFrame({
+        'nexps': np.array(list(nexps.values())).flatten(),
+        'npetals': np.array(list(npetals.values())).flatten()
+        }
+                  )
+fg = sns.countplot(x='nexps', hue='npetals',
+                   data=df, saturation=1, ax=ax
+                )
+plt.setp(fg.get_legend().get_texts(), fontsize=fontsize)
+plt.setp(fg.get_legend().get_title(), fontsize=fontsize)
+ax.set_title('Lya (unique objs: %s; total exps: %s)' % (len(np.unique(zcat_lya['TARGETID'])), np.sum(df['nexps'])))
+
+for ax in axes:
+    ax.set_axisbelow(True)
+
+fig.set_size_inches(8*ncols, 6)
+# save fig
+fname = f'{outdir}/plot_nexp_npetals.png'
+plt.savefig(fname, format='png', bbox_inches='tight')
+plt.close()
+print(f'## saved {fname}')
+
+# lets now plot the spectra for an example  object with more than 1 petal
+for key in npetals:
+    if npetals[key][0] > 1:
+        targetid = key
+        break
+
+hpix = zcat_lya['HPIXELNUM'][np.where(zcat_lya['TARGETID'] == targetid)[0]].value[0]
+# plot the simspectra vs the grouped/coadded ones
+compare_spectra_groupedcoadded_vs_not(exposures_path=path_exposures,
+                                      coadd_spectra_path=path_spec16,
+                                      nside=nside, hpixnum=hpix, targetid=targetid,
+                                      showfig=False,
+                                      outdir=outdir, savefig=True
+                                      )
+
+print(f'## time taken: {(time.time() - time0)/60: .2f} min')
