@@ -159,6 +159,8 @@ for hpix_mod in os.listdir(f'{coadds_path}/spectra-{nside}/'):
         data4later['ZERR'] = np.zeros_like(data4later['Z'])
         # picca seems to want to this - i think 0 is okay?
         data4later['ZWARN'] = np.zeros_like(data4later['Z'])
+        # now lets add the hpixel for later
+        data4later['HPIXELNUM'] = np.array([hpix] * len(data4later['Z'])).astype(int)
         # now lets drop duplicate targetids and sort by the targetids so things match between the ztrue
         # data and the fibermap (checked in desi_zcatalogs)
         # ztrue data
