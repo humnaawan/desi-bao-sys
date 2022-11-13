@@ -69,7 +69,11 @@ logging.info(f'\n## inputs: {options}\n')
 
 logging.getLogger('matplotlib.font_manager').disabled = True
 logging.getLogger("imported_module").setLevel(logging.WARNING)
-#logging.info(f'\n ## inputs: {options}\n')
+
+outdir = f'{outdir}/picca-output'
+if not os.path.exists(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    print(f'## created the directory {outdir}')
 
 if calc_corrs and not plot_corrs:
     logging.info(f'## setting plot_corrs = True since calc_corrs = True')

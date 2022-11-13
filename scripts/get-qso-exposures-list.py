@@ -20,20 +20,24 @@ parser.add_option('--data-path',
                   dest='data_path', type='str',
                   help='path to directory with all the data \
                         (i.e., where folder name = night)')
+parser.add_option('--outdir',
+                  dest='outdir', type='str',
+                  help='path to the directory where the output csv file is to saved.')
 parser.add_option('--nside',
                   dest='nside', type=int,
                   help='nside resolution param')
 (options, args) = parser.parse_args()
 print('\n## inputs: %s' % options)
 data_path = options.data_path
+outdir = options.outdir
 nside = options.nside
 # ------------------------------------------------------------------------
 start0 = time.time()
 
 # set up the logger
 temp = f'get-qso-list_{datetime.datetime.now()}'.replace(' ', '_').split('.')[0]
-logging.basicConfig(filename=f'{data_path}/log_{temp}.log',
-                    level=logging.DEBUG, filemode='w', 
+logging.basicConfig(filename=f'{outdir}/log_{temp}.log',
+                    level=logging.DEBUG, filemode='w',
                     #format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p'
                    )
 logging.info(f'running {sys.argv[0]}')
@@ -52,15 +56,15 @@ for night in [f for f in os.listdir(data_path) if os.path.isdir(f'{data_path}/{f
                 raise ValueError(f'somethings weird: have {len(fnames)} simspec fits files in {subdir}')
             else:
                 # i.e. have exactly only simspec file
-                data_simspec = Table.read(f'{subdir}/{fnames[0]}', format='fits')
+                data_simspec = Table.read(f'{subdir}/{fnames[0]}', hdu='TRUTH', format='fits')
                 # keep only the QSOs
                 data_simspec = data_simspec[data_simspec['TRUESPECTYPE'] == 'QSO']
-            
+
             for petal in range(10):
                 logging.info(f'## dealing with petal {petal}')
                 fname = f'{subdir}/spectra-{petal}-{expid}.fits'
                 if os.path.exists(fname):
-                    data_spectra = Table.read(fname, format='fits')
+                    data_spectra = Table.read(fname, hdu='FIBERMAP', format='fits')
 
                     joined = join(data_spectra, data_simspec, keys='TARGETID')
 
@@ -92,7 +96,7 @@ for night in [f for f in os.listdir(data_path) if os.path.isdir(f'{data_path}/{f
 explist = pd.DataFrame(explist, columns=['NIGHT', 'EXPID', 'TILEID', 'SPECTRO', 'HEALPIX'])
 # save the data
 fname = f'qso-exposures-list_nside{nside}.csv'
-explist.to_csv(f'{data_path}/{fname}', index=False)
+explist.to_csv(f'{outdir}/{fname}', index=False)
 
 logging.info(f'## saved {fname} in {data_path}')
 logging.info('## all done')

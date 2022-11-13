@@ -80,8 +80,8 @@ logging.info(f'\n## inputs: {options}\n')
 # ------------------------------------------------------------------------
 # fibermap data
 fibermap_fname = f'{path}/fibermap-{expid}.fits'
-fibermap = Table.read(fibermap_fname, format='fits')
 hdul_fibermap = fits.open(fibermap_fname)
+fibermap = Table(hdul_fibermap[hdul_fibermap.index_of('FIBERMAP')].data)
 
 for key in ['FIBER', 'TARGETID', 'DEVICE_LOC']:
     uniq, cts = np.unique(fibermap[key], return_counts=True)
@@ -90,9 +90,9 @@ for key in ['FIBER', 'TARGETID', 'DEVICE_LOC']:
 # ------------------------------------------------------------------------
 # simspec data
 simspec_fname = f'{path}/simspec-{expid}.fits'
-simspec = Table.read(simspec_fname, format='fits', hdu='TRUTH')
-simspec_hdul = fits.open(simspec_fname)
-obsconditions = Table.read(simspec_fname, format='fits', hdu='OBSCONDITIONS')
+hdul_simspec = fits.open(simspec_fname)
+simspec = Table(hdul_simspec[hdul_simspec.index_of('TRUTH')].data)
+obsconditions = Table(hdul_simspec[hdul_simspec.index_of('OBSCONDITIONS')].data)
 obsconditions_dict = [dict(zip(obsconditions.colnames, row)) for row in obsconditions][0]
 if debug and exptime is not None:
     logging.info(f'# updating exptime to be {exptime}s.')
@@ -224,14 +224,16 @@ def save_data_for_this_petal(simulator, nspec, fibermap, spectra_fibermap, spect
 # ------------------------------------------------------------------------
 fibermap_by_petal = fibermap.group_by('PETAL_LOC')
 
-wave_simspec = simspec_hdul[0].data
-flux_all_fibers = simspec_hdul[1].data
+wave_simspec = hdul_simspec[hdul_simspec.index_of('WAVE')].data
+# lets make sure that the fluxes are sorted by fiber number
+inds = np.argsort(hdul_simspec[hdul_simspec.index_of('FIBERMAP')].data['FIBER'])
+flux_all_fibers = hdul_simspec[hdul_simspec.index_of('FLUX')].data[inds, :]
 
 # some extra stuff for specsim
 cols_to_add = ['NIGHT', 'EXPID', 'TILEID']
 data_to_add = []
 for col in cols_to_add:
-    data_to_add.append(np.int32(hdul_fibermap[1].header[col]))
+    data_to_add.append(np.int32(hdul_fibermap[hdul_fibermap.index_of('FIBERMAP')].header[col]))
 
 # work with each petal
 petal_inds = range(10)
@@ -245,7 +247,7 @@ for petal_ind in petal_inds:
     logging.info(f'## working with petal {petal}')
 
     fibers_this_petal = fibermap_this_petal['FIBER'].quantity
-    flux_this_petal = flux_all_fibers[fibers_this_petal, :] # assuming row index = fiber number NEED TO UDPATE
+    flux_this_petal = flux_all_fibers[fibers_this_petal, :] # row index = fiber number give the sort above
 
     nfiber = 400
     if debug:

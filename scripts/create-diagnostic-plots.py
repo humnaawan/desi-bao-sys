@@ -39,6 +39,12 @@ nside = options.nside
 randobj = options.rand_obj
 
 # ------------------------------------------------------------------------------
+outdir = f'{outdir}/plots-diagnostic/'
+if not os.path.exists(outdir):
+    print(f'## creating {outdir}')
+    os.makedirs(outdir)
+
+# ------------------------------------------------------------------------------
 # lets deal with the zcatalog stuff first
 zcat = Table.read(path_zcat)
 zcat = zcat[zcat['HPIXELNUM'] != 0]  # dealing with duplicates -- needs to be fixed
@@ -134,15 +140,16 @@ print(f'targetid = {targetid}; hpix = {hpix}')
 out = compare_spectra_groupedcoadded_vs_not(exposures_path=path_exposures,
                                             coadd_spectra_path=path_spec16,
                                             nside=nside, hpixnum=hpix, targetid=targetid,
+                                            showfig=False,
                                             outdir=outdir, savefig=True,
                                             return_objdata=True
                                             )
 simspec_ind, night, expid = out
-print('etwet', simspec_ind)
 # ----------------------------------
 # now plot the template vs. calibrated plot for this object
 compare_spectra_template_vs_calibrated(exposures_path=path_exposures,
                                        night=night, expid=expid,
+                                       showfig=False,
                                        outdir=outdir, savefig=True,
                                        simspec_ind=simspec_ind
                                        )
