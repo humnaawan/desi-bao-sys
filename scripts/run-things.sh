@@ -11,6 +11,7 @@ get_zfile=1
 get_zcatalog=1
 get_drqcatalog=1
 run_picca=1
+plots=1
 # --------------------------------------------------------------------------
 source /global/cfs/cdirs/desi/software/desi_environment.sh master
 
@@ -94,4 +95,17 @@ then
                          --fit-bao \
                          --inis-path=${basepath}/'picca-inis/' \
                          > ${basepath}'picca-output/out_runpicca.log'
+fi
+# ---------------------------------------------------------
+if [ $plots == 1 ];
+then
+     printf '\n## running create-diagnostic-plots.py ...\n'
+     module load python
+     conda activate picca_pip
+     python /global/homes/a/awan/desi/desi-bao-sys/scripts/create-diagnostic-plots.py \
+                         --outdir=${basepath}'plots-diagnostic/' \
+                         --exposures-path=${basepath}'/exposures' \
+                         --zcat-path=${datapath}'zcat.fits' \
+                         --spectra-path=${datapath}'spectra-16/' \
+                         --nside=16
 fi
