@@ -119,7 +119,11 @@ def compare_spectra_template_vs_calibrated(exposures_path, night, expid,
         title += f'{key} {data_simspec_truth[key][simspec_ind]} ; '
     title = title[0:-2]
     plt.suptitle(f'night {night} ; expid {expid}\n' +
-                 f'target ID {targetid} ; petal {petal_ind} ; simspec-ind {simspec_ind}\n{title}', y=1.15)
+                 f'target ID {targetid} ; petal {petal_ind} ; simspec-ind {simspec_ind}\n ' +
+                 'simspec exptime %s; ' % (data_fibermap['EXPTIME'][simspec_ind]) +
+                 'Spectra exptime %s\n' % (data_spectra.fibermap['EXPTIME'].data[ind_spectra]) +
+                 f'{title}',
+                  y=1.15)
     # plot details
     for ncol in range(ncols):
         axes[0, ncol].set_ylabel('flux')
@@ -212,10 +216,12 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, coadd_spectra_path,
                 ax1 = axes1[i, 2]
                 ax2 = axes2[i, 2]
             ax1.plot(grouped.wave[band], grouped.flux[band][ind, :].reshape(nwave))
-            ax1.set_title(f'grouped observation; ind {ind}\nflux from grouped-spectra file', fontsize=14)
-
             ax2.plot(grouped.wave[band], grouped.ivar[band][ind, :].reshape(nwave))
-            ax2.set_title(f'grouped observation; ind {ind}\nivar from grouped-spectra file', fontsize=14)
+
+            details = f'grouped observation; ind {ind}'
+            exp = 'exptime %s' % (grouped.fibermap['EXPTIME'][ind])
+            ax1.set_title(f'{details}\nflux from grouped-spectra file\n{exp}', fontsize=14)
+            ax2.set_title(f'{details}\nivar from grouped-spectra file\n{exp}', fontsize=14)
 
         # now plot the spectra file from disc that were presumbly used to create the grouped spectra
         petal = grouped.fibermap[ind]['PETAL_LOC']
@@ -234,9 +240,13 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, coadd_spectra_path,
         else:
             ax1 = axes1[i, 0]
             ax2 = axes2[i, 0]
-        ax1.plot(simspec_hdul[0].data, simspec_hdul[1].data[simspec_ind, :][0, :])
-        ax1.set_title(f'simspec template; ind {simspec_ind}\nnight {night}; expid {expid}', fontsize=14)
-        ax2.set_title(f'simspec template; ind {simspec_ind}\nnight {night}; expid {expid}', fontsize=14)
+        ax1.plot(simspec_hdul[simspec_hdul.index_of('WAVE')].data,
+                 simspec_hdul[simspec_hdul.index_of('FLUX')].data[simspec_ind, :][0, :])
+
+        details = f'ind {simspec_ind}\nnight {night}; expid {expid}'
+        details += '\nexptime %s' % (simspec_hdul[simspec_hdul.index_of('FIBERMAP')].data['EXPTIME'][simspec_ind])
+        ax1.set_title(f'simspec template; {details}', fontsize=14)
+        ax2.set_title(f'simspec template;{details}', fontsize=14)
 
         # now the coadded Spectra files
         fnames = [f for f in os.listdir(subdir) if f.startswith(f'spectra-{petal}-')]
@@ -257,8 +267,11 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, coadd_spectra_path,
                 nwave = len(spectra.wave[band])
                 ax1.plot(spectra.wave[band], spectra.flux[band][ind_petal_spec, :].reshape(nwave))
                 ax2.plot(spectra.wave[band], spectra.ivar[band][ind_petal_spec, :].reshape(nwave))
-            ax1.set_title(f'calibrated Spectra; ind {ind_petal_spec}\npetal {petal}; night {night}; expid {expid}', fontsize=14)
-            ax2.set_title(f'calibrated Spectra ivar; ind {ind_petal_spec}\npetal {petal}; night {night}; expid {expid}', fontsize=14)
+
+            details = f'ind {ind_petal_spec}\npetal {petal}; night {night}; expid {expid}'
+            details += '\nexptime %s' % (spectra.fibermap['EXPTIME'][ind_petal_spec].value)
+            ax1.set_title(f'calibrated Spectra; {details}', fontsize=14)
+            ax2.set_title(f'calibrated Spectra ivar; {details}', fontsize=14)
 
     grouped = []
     # now lets read the coadded spectrum
@@ -279,10 +292,11 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, coadd_spectra_path,
                 axes2[i, 3].axis('off')
         for band in 'brz':
             nwave = len(coadded.wave[band])
-            ax1.plot(coadded.wave[band], coadded.flux[band][ind, :].reshape(nwave))
-            ax1.set_title(f'coadded observation; ind {ind}\nflux from coadded-spectra file', fontsize=14)
 
+            ax1.plot(coadded.wave[band], coadded.flux[band][ind, :].reshape(nwave))
             ax2.plot(coadded.wave[band], coadded.ivar[band][ind, :].reshape(nwave))
+
+            ax1.set_title(f'coadded observation; ind {ind}\nflux from coadded-spectra file', fontsize=14)
             ax2.set_title(f'coadded observation; ind {ind}\nivar from coadded-spectra file', fontsize=14)
     # plot details
     fig1.set_size_inches(20, 3*nrows)
@@ -291,8 +305,10 @@ def compare_spectra_groupedcoadded_vs_not(exposures_path, coadd_spectra_path,
         y = 1.30
     elif nrows == 2:
         y = 1.15
-    else:
+    elif nrows == 2:
         y = 1.06
+    else:
+        y = 1.01
 
     title = f'targetID {targetid}\n healpix pixel {hpixnum} (nside {nside})\n'
     simspec_truth = simspec_hdul[simspec_hdul.index_of('TRUTH')].data

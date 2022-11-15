@@ -22,7 +22,7 @@ parser.add_option('--exposures-path',
                   help='path to directory with all exposures folder with night sub-folders.')
 parser.add_option('--zcat-path',
                   dest='path_zcat', type='str',
-                  help='path to zca file.')
+                  help='path to zcat file.')
 parser.add_option('--spectra-path',
                   dest='path_spec16', type='str',
                   help='path to spectra-<nside> folder.')
@@ -48,7 +48,6 @@ outdir = f'{outdir}/plots-diagnostic/'
 if not os.path.exists(outdir):
     print(f'## creating {outdir}')
     os.makedirs(outdir)
-
 # ------------------------------------------------------------------------------
 # lets deal with the zcatalog stuff first
 zcat = Table.read(path_zcat)
@@ -135,10 +134,10 @@ if randobj:
     targetid = None
 else:
     # read  in zcat - and randomly choose a target id
-    zcat_lya = zcat_lya[zcat_lya['Z'] > 2.5]
-    targetid = random.choice(np.unique(zcat_lya['TARGETID'].value))
-    hpix = zcat_lya['HPIXELNUM'][np.where(zcat_lya['TARGETID'].data == targetid)[0]].value[0]
-
+    zcat_lya_ = zcat_lya[zcat_lya['Z'] > 2.5]
+    targetid = random.choice(np.unique(zcat_lya_['TARGETID'].value))
+    hpix = zcat_lya_['HPIXELNUM'][np.where(zcat_lya_['TARGETID'].data == targetid)[0]].value[0]
+    zcat_lya_ = []
 print(f'targetid = {targetid}; hpix = {hpix}')
 # ----------------------------------
 # plot the simspectra vs the grouped/coadded ones
@@ -204,7 +203,7 @@ plt.setp(fg.get_legend().get_texts(), fontsize=fontsize)
 plt.setp(fg.get_legend().get_title(), fontsize=fontsize)
 ax.set_title('QSO (unique objs: %s; total exps: %s)' % (len(np.unique(zcat_qso['TARGETID'])), np.sum(df['nexps'])))
 
-# now lets plot things for QSO
+# now lets plot things for lya
 nexps, npetals = {}, {}
 # group by hpixel number
 grp = zcat_lya.group_by('HPIXELNUM')
@@ -218,7 +217,6 @@ for i, hpix in enumerate(grp.groups.keys['HPIXELNUM']):
         # add count
         if len(ind_grouped) > 0:
             if targetid in nexps:
-
                 nexps[targetid] += [len(ind_grouped)]
                 npetals[targetid] += [len(np.unique(grouped.fibermap['PETAL_LOC'][ind_grouped].value))]
             else:
@@ -239,7 +237,6 @@ fg = sns.countplot(x='nexps', hue='npetals',
 plt.setp(fg.get_legend().get_texts(), fontsize=fontsize)
 plt.setp(fg.get_legend().get_title(), fontsize=fontsize)
 ax.set_title('Lya (unique objs: %s; total exps: %s)' % (len(np.unique(zcat_lya['TARGETID'])), np.sum(df['nexps'])))
-
 for ax in axes:
     ax.set_axisbelow(True)
 

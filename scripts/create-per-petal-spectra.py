@@ -62,10 +62,6 @@ skyerr = options.skyerr
 # ------------------------------------------------------------------------
 start0 = time.time()
 
-# one night's data
-#night = '20191206'
-#expid = '00000344'
-#path = f'/global/cscratch1/sd/awan/desi/{night}/{expid}/'
 path = f'{data_path}/{night}/{expid}/'
 
 # set up the logger
