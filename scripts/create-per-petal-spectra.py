@@ -10,6 +10,7 @@ from astropy.table import Table
 import astropy.units as u
 import numpy as np
 from settings import *
+import os
 
 import desisim.simexp
 import desimodel.io
@@ -77,6 +78,21 @@ logging.basicConfig(filename=f'{path}/log_{temp}.log',
 logging.info(f'running {sys.argv[0]}')
 logging.info(f'\n## inputs: {options}\n')
 
+# lets first check if the calibrated outputs are already present
+# there should be one spectra file for each of the 10 petals
+spectra_files = [f for f in os.listdir(path) if f.startswith('spectra-') and f.endswith('fits')]
+# there should also be one cframe file for each of the 10 petals for each band
+cframe_files = [f for f in os.listdir(path) if f.startswith('cframe-') and f.endswith('fits.gz')]
+if len(spectra_files) == 10 and len(cframe_files) == 30:
+    # no need to run this script
+     message = f'\n## found 10 spectra files and 30 cframe files for night = {night} and expid = {expid}.\n'
+     message += '## exiting.\n'
+     logging.info(message)
+     print(message)
+
+     logging.info('## all done')
+     logging.info(f'## time taken: {time.time() - start0: .2f} sec')
+     exit()
 # ------------------------------------------------------------------------
 # fibermap data
 fibermap_fname = f'{path}/fibermap-{expid}.fits'
