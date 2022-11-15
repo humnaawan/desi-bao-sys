@@ -112,6 +112,7 @@ then
      python /global/homes/a/awan/desi/desi-bao-sys/scripts/create-diagnostic-plots.py \
                          --outdir=${path_sims} \
                          --exposures-path=${path_exposures} \
+                         --qso-cat-path=${path_sims}'qso-exposures-list_nside'${nside}'.csv' \
                          --zcat-path=${path_sims}'zcat.fits' \
                          --spectra-path=${path_sims}'spectra-16/' \
                          --nside=16

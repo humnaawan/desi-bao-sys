@@ -20,6 +20,9 @@ parser.add_option('--outdir',
 parser.add_option('--exposures-path',
                   dest='exposures_path', type='str',
                   help='path to directory with all exposures folder with night sub-folders.')
+parser.add_option('--qso-cat-path',
+                  dest='path_qso_cat', type='str',
+                  help='path to qso-catalog file.')
 parser.add_option('--zcat-path',
                   dest='path_zcat', type='str',
                   help='path to zcat file.')
@@ -37,6 +40,7 @@ parser.add_option('--rand',
 (options, args) = parser.parse_args()
 outdir = options.outdir
 path_exposures = options.exposures_path
+path_qso_cat = options.path_qso_cat
 path_zcat = options.path_zcat
 path_spec16 = options.path_spec16
 nside = options.nside
@@ -261,5 +265,92 @@ compare_spectra_groupedcoadded_vs_not(exposures_path=path_exposures,
                                       showfig=False,
                                       outdir=outdir, savefig=True
                                       )
+# ----------------------------------
+# lets plot nexposures vs night
+qso_cat = Table.read(path_qso_cat)
+
+col = 'NIGHT'
+
+plt.clf()
+fg = sns.countplot(x=col, data={col: qso_cat[col]}, saturation=1, color='#1f77b4')
+
+# details
+ax = plt.gca()
+ax.set_title(f'QSO exposures (%s)' % len(qso_cat[col]))
+ax.set_ylabel('exposure count')
+ax.set_axisbelow(True)
+if len(ax.get_xticks()) > 2:
+    plt.xticks(rotation = 90)
+plt.gcf().set_size_inches(5 * (1 + len(np.unique(qso_cat[col])) // 10), 6)
+
+# save fig
+fname = f'{outdir}/plot_nights-vs-nexp.png'
+plt.savefig(fname, format='png', bbox_inches='tight')
+plt.close()
+print(f'## saved {fname}')
+
+# ----------------------------------
+# lets plot countplots for some of exptimes in the grouped files
+cols = ['EXPTIME', 'PETAL_LOC']
+df = pd.DataFrame(columns=cols)
+for hpix_mod in os.listdir(path_spec16):
+    for hpix in os.listdir(f'{path_spec16}/{hpix_mod}'):
+        grouped = read_spectra(f'{path_spec16}/{hpix_mod}/{hpix}/grouped-{nside}-{hpix}.fits')
+        df = pd.concat([df, grouped.fibermap[cols].to_pandas()], ignore_index=True)
+
+# now plot
+plt.clf()
+x, hue = 'PETAL_LOC', 'EXPTIME'
+nuniq = len(np.unique(df[hue].values))
+fg = sns.countplot(x=x, hue=hue, data=df, saturation=1,
+                    palette=sns.color_palette("Dark2")
+                    )
+# plot details
+ax = plt.gca()
+ax.set_axisbelow(True)
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles[0:nuniq], labels[0:nuniq], bbox_to_anchor=(1,1), title=hue, )
+plt.setp(fg.get_legend().get_title(), fontsize=fontsize)
+plt.suptitle(f'grouped data\nall objects (%s)' % len(df[hue]), fontsize=20, y=1.01)
+plt.gcf().set_size_inches(10, 5)
+
+# save fig
+fname = f'{outdir}/plot_grouped-data-petal-vs-exptime.png'
+plt.savefig(fname, format='png', bbox_inches='tight')
+plt.close()
+print(f'## saved {fname}')
+
+# ----------------------------------
+# lets also plot countplots for some thing in the coadd data
+cols = ['COADD_NUMTILE', 'COADD_NUMEXP', 'COADD_EXPTIME']
+
+df = pd.DataFrame(columns=cols)
+for hpix_mod in os.listdir(path_spec16):
+    for hpix in os.listdir(f'{path_spec16}/{hpix_mod}'):
+        coadd = read_spectra(f'{path_spec16}/{hpix_mod}/{hpix}/spectra-{nside}-{hpix}.fits')
+        df = pd.concat([df, coadd.fibermap[cols].to_pandas()], ignore_index=True)
+
+# now plot
+plt.clf()
+nrows, ncols = 1, len(cols)
+fig, axes = plt.subplots(nrows, ncols)
+for i, col in enumerate(cols):
+    ax = axes[i]
+    fg = sns.countplot(x=col, data=df, saturation=1, color='#1f77b4', ax=ax)
+    if i == 0:
+        ax.set_ylabel('count')
+    else:
+        ax.set_ylabel('')
+    if (i == ncols-1) and len(ax.get_xticks()) > 5:
+        ax.tick_params(labelrotation=45)
+    ax.set_axisbelow(True)
+plt.suptitle(f'coadded data\nall objects (%s)' % len(df[col]), fontsize=20, y=1.01)
+plt.gcf().set_size_inches(20, 5)
+
+# save fig
+fname = f'{outdir}/plot_coadd-data-ntiles-nexp-exptime.png'
+plt.savefig(fname, format='png', bbox_inches='tight')
+plt.close()
+print(f'## saved {fname}')
 
 print(f'## time taken: {(time.time() - time0)/60: .2f} min')
